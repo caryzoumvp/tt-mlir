@@ -165,7 +165,9 @@ include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 include_directories(SYSTEM ${MLIR_INCLUDE_DIRS})
 include_directories(${TTMLIR_SOURCE_DIR}/include)
 include_directories(${TTMLIR_BINARY_DIR}/include)
-include_directories(${TTMLIR_TOOLCHAIN_DIR}/include)
+# Dependency headers (for example FlatBuffers) must not override the selected
+# LLVM/MLIR headers when a workspace-managed toolchain is used.
+include_directories(SYSTEM ${TTMLIR_TOOLCHAIN_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 include(TTMLIRPythonSitePackages)

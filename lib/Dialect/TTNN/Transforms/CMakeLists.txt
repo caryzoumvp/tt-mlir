@@ -152,7 +152,7 @@ add_mlir_dialect_library(MLIRTTNNTransforms
 set_source_files_properties(
     "TTNNResolveTTLangKernelsPython.cpp"
     PROPERTIES
-        COMPILE_OPTIONS "-frtti;-fexceptions"
+        COMPILE_OPTIONS "-frtti;-fexceptions;-Wno-deprecated-literal-operator"
 )
 
 # `add_mlir_dialect_library` doesn't expose its created `obj.` target in
