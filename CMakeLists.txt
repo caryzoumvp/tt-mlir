@@ -139,6 +139,19 @@ set(Python3_EXECUTABLE $ENV{TTMLIR_VENV_DIR}/bin/python3)
 include(FindMLIR)
 include(TTMLIRVersion)
 
+# StableHLO registers lit test suites when embedded, even if tt-mlir tests are
+# disabled.  LLVM package exports do not provide CMake targets for these tools,
+# unlike an in-tree LLVM build.  The tools themselves are supplied by the
+# activated toolchain through LLVM_TOOLS_DIR, so provide dependency targets for
+# the embedded suites without requiring an in-tree LLVM configuration.
+if(TTMLIR_ENABLE_STABLEHLO)
+  foreach(llvm_test_tool FileCheck not)
+    if(NOT TARGET ${llvm_test_tool})
+      add_custom_target(${llvm_test_tool})
+    endif()
+  endforeach()
+endif()
+
 add_library(coverage_config INTERFACE)
 if(CODE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   # Add required flags (GCC & LLVM/Clang)

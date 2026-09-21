@@ -72,7 +72,7 @@ target_link_libraries(test_python_runner
   PRIVATE
     tt-alchemist-python-runner
     ${TTMETAL_LIBRARY_PATH}
-    "LINKER:${TTNN_LIBRARY_PATH}"
+    ${TTNN_LIBRARY_PATH}
     ${TT_STL_LIBRARY_PATH}
     ${FMT_LIBRARY_PATH}
 )

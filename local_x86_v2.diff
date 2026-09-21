@@ -1,0 +1,385 @@
+diff --git a/runtime/lib/ttmetal/executor.cpp b/runtime/lib/ttmetal/executor.cpp
+index 8752ad6fdd..4b4754ec3b 100644
+--- a/runtime/lib/ttmetal/executor.cpp
++++ b/runtime/lib/ttmetal/executor.cpp
+@@ -344,8 +344,8 @@ void MCQExecutor::execute(const target::metal::EnqueueProgramCommand *command,
+ 
+       auto createSemaphore = [&](std::uint32_t initialValue,
+                                  CoreType coreType) -> std::uint32_t {
+-        return tt_metal::CreateSemaphore(program, coreRangeSet, initialValue,
+-                                         coreType);
++        (void)coreType;
++        return tt_metal::CreateSemaphore(program, coreRangeSet, initialValue);
+       };
+ 
+       tt_metal::KernelHandle handle = createKernel(
+diff --git a/runtime/lib/ttmetal/executor_utils.h b/runtime/lib/ttmetal/executor_utils.h
+index 782ee7a708..74ba70c13e 100644
+--- a/runtime/lib/ttmetal/executor_utils.h
++++ b/runtime/lib/ttmetal/executor_utils.h
+@@ -10,6 +10,7 @@
+ #include "tt/runtime/detail/ttmetal/ttmetal.h"
+ 
+ #include "tt-metalium/allocator.hpp"
++#include "tt-metalium/host_api.hpp"
+ 
+ #include <filesystem>
+ #include <functional>
+@@ -237,8 +238,8 @@ createMeshBufferFromBufferRef(
+ #pragma clang diagnostic pop
+ 
+ inline std::string kernelConfigTypeString(
+-    const std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig,
+-                       tt_metal::EthernetConfig> &kernelConfig) {
++    const std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig>
++        &kernelConfig) {
+   // return a string representation of the kernel config type
+   if (const auto *dataMovementConfig =
+           std::get_if<tt_metal::DataMovementConfig>(&kernelConfig)) {
+@@ -268,20 +269,8 @@ inline std::string kernelConfigTypeString(
+     }
+ 
+     return dataMovementCore + "_noc" + std::to_string(dataMovementConfig->noc);
+-  } else if (std::holds_alternative<tt_metal::ComputeConfig>(kernelConfig)) {
+-    return "trisc";
+-  } else if (const auto *ethernetConfig =
+-                 std::get_if<tt_metal::EthernetConfig>(&kernelConfig)) {
+-    return "erisc" +
+-           std::to_string(
+-               static_cast<
+-                   std::underlying_type_t<tt_metal::DataMovementProcessor>>(
+-                   ethernetConfig->processor)) +
+-           "_noc" + std::to_string(ethernetConfig->noc) + "_" +
+-           (ethernetConfig->eth_mode == tt_metal::Eth::SENDER ? "sender"
+-                                                              : "receiver");
+   }
+-  return "unknown";
++  return "trisc";
+ }
+ 
+ inline std::string parseLocFromDebugInfo(const char *programDebugInfo) {
+@@ -317,8 +306,8 @@ coreRangeToString(const tt::tt_metal::CoreRangeSet &coreRanges) {
+ inline std::string createKernelFilePath(
+     const char *currentProgramName, const char *kernelDebugInfo,
+     const char *kernelLoc, const tt::tt_metal::CoreRangeSet &coreRangeSet,
+-    const std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig,
+-                       tt_metal::EthernetConfig> &kernelConfig,
++    const std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig>
++        &kernelConfig,
+     std::filesystem::path prefix = {}, const char *extention = ".cpp") {
+   if (prefix.empty()) {
+     prefix = "/tmp";
+@@ -356,8 +345,8 @@ inline void writeFile(const std::string &fileName, const std::string &source) {
+ inline tt_metal::KernelHandle createKernel(
+     tt_metal::Program &program, const std::string &kernelSource,
+     const tt::tt_metal::CoreRangeSet &coreRangeSet,
+-    const std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig,
+-                       tt_metal::EthernetConfig> &kernelConfig,
++    const std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig>
++        &kernelConfig,
+     const char *currentProgramName, const char *programDebugInfo,
+     const char *kernelDebugInfo, const char *kernelLoc) {
+   LOG_TRACE(logger::LogRuntimeTTMetalKernel,
+@@ -494,8 +483,7 @@ std::vector<std::uint32_t> processCompileArgs(Args... args) {
+   return processKernelArgs<true>(args...);
+ }
+ 
+-inline std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig,
+-                    tt_metal::EthernetConfig>
++inline std::variant<tt_metal::DataMovementConfig, tt_metal::ComputeConfig>
+ createKernelConfig(
+     const target::metal::KernelConfig *kernelConfig,
+     const flatbuffers::Vector<target::metal::ArgRef> *argRefsType,
+@@ -524,30 +512,8 @@ createKernelConfig(
+     }
+   }
+   case target::metal::KernelConfigType::EthernetConfig: {
+-    tt_metal::EthernetConfig ethernetConfig;
+-    ethernetConfig.compile_args = compileArgs;
+-    switch (kernelConfig->type_as_EthernetConfig()->eth_type()) {
+-    case tt::target::metal::EthType::Sender: {
+-      ethernetConfig.eth_mode = tt_metal::Eth::SENDER;
+-      break;
+-    }
+-    case tt::target::metal::EthType::Receiver: {
+-      ethernetConfig.eth_mode = tt_metal::Eth::RECEIVER;
+-      break;
+-    }
+-    }
+-
+-    switch (kernelConfig->type_as_EthernetConfig()->noc_index()) {
+-    case tt::target::NocIndex::Noc0: {
+-      ethernetConfig.noc = tt_metal::NOC::NOC_0;
+-      break;
+-    }
+-    case tt::target::NocIndex::Noc1: {
+-      ethernetConfig.noc = tt_metal::NOC::NOC_1;
+-      break;
+-    }
+-    }
+-    return ethernetConfig;
++    LOG_FATAL(
++        "Ethernet kernel config is not supported by this tt-metal build API");
+   }
+   case target::metal::KernelConfigType::ComputeConfig: {
+     const auto *fbComputeConfig = kernelConfig->type_as_ComputeConfig();
+diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
+index 60633955a8..ff69dba79e 100644
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -1,6 +1,13 @@
+ include(ExternalProject)
+ 
+ set(TT_METAL_VERSION "883c71429c58f82d6fff0d2c947f91223beaa519")
++set(TTMETAL_SOURCE_DIR "${TTMLIR_SOURCE_DIR}/third_party/tt-metal/src/tt-metal")
++set(TTMETAL_USE_LOCAL_SOURCE OFF)
++if (DEFINED ENV{TT_METAL_SOURCE_DIR} AND NOT "$ENV{TT_METAL_SOURCE_DIR}" STREQUAL "")
++  set(TTMETAL_SOURCE_DIR "$ENV{TT_METAL_SOURCE_DIR}")
++  set(TTMETAL_USE_LOCAL_SOURCE ON)
++endif()
++message(STATUS "Using tt-metal source dir: ${TTMETAL_SOURCE_DIR}")
+ 
+ # Suppress install logs to avoid cluttering the build output
+ set(CMAKE_INSTALL_MESSAGE NEVER)
+@@ -9,41 +16,41 @@ set(CMAKE_INSTALL_MESSAGE NEVER)
+ if (DEFINED ENV{CPM_SOURCE_CACHE})
+   set(CPM_SOURCE_CACHE $ENV{CPM_SOURCE_CACHE})
+ else()
+-  set(CPM_SOURCE_CACHE "${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/.cpmcache")
++  set(CPM_SOURCE_CACHE "${TTMETAL_SOURCE_DIR}/.cpmcache")
+ endif()
+ message(STATUS "Setting tt-metal CPM cache to: ${CPM_SOURCE_CACHE}")
+ 
+-set(TTMETAL_BUILD_DIR ${TTMLIR_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/build_${CMAKE_BUILD_TYPE})
+-set(TTMETAL_BUILD_SYMLINK ${TTMLIR_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/build)
++set(TTMETAL_BUILD_DIR ${TTMETAL_SOURCE_DIR}/build_${CMAKE_BUILD_TYPE})
++set(TTMETAL_BUILD_SYMLINK ${TTMETAL_SOURCE_DIR}/build)
+ # tt-metal uses GNUInstallDirs which sets CMAKE_INSTALL_LIBDIR to "lib" or "lib64" based on the system
+ # We need to use the same value to find the installed libraries
+ include(GNUInstallDirs)
+ set(TTMETAL_LIBRARY_DIR ${TTMETAL_BUILD_DIR}/${CMAKE_INSTALL_LIBDIR})
+ 
+ set(TRACY_INCLUDE_DIRS
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/third_party/tracy/public
++  ${TTMETAL_SOURCE_DIR}/tt_metal/third_party/tracy/public
+ )
+ 
+ set(TTMETAL_INCLUDE_DIRS
+   ${TRACY_INCLUDE_DIRS}
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn/api
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn/core
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn/cpp
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn/cpp/ttnn
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn/cpp/ttnn/deprecated
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/api
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/include
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/hostdevcommon/api
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/third_party/umd
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/third_party/umd/device/api
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/hw/inc
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/third_party/taskflow
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_stl
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_stl/tt_stl
+-  ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_eager
++  ${TTMETAL_SOURCE_DIR}/ttnn
++  ${TTMETAL_SOURCE_DIR}/ttnn/api
++  ${TTMETAL_SOURCE_DIR}/ttnn/core
++  ${TTMETAL_SOURCE_DIR}/ttnn/cpp
++  ${TTMETAL_SOURCE_DIR}/ttnn/cpp/ttnn
++  ${TTMETAL_SOURCE_DIR}/ttnn/cpp/ttnn/deprecated
++  ${TTMETAL_SOURCE_DIR}
++  ${TTMETAL_SOURCE_DIR}/tt_metal
++  ${TTMETAL_SOURCE_DIR}/tt_metal/api
++  ${TTMETAL_SOURCE_DIR}/tt_metal/include
++  ${TTMETAL_SOURCE_DIR}/tt_metal/hostdevcommon/api
++  ${TTMETAL_SOURCE_DIR}/tt_metal/third_party/umd
++  ${TTMETAL_SOURCE_DIR}/tt_metal/third_party/umd/device/api
++  ${TTMETAL_SOURCE_DIR}/tt_metal/hw/inc
++  ${TTMETAL_SOURCE_DIR}/tt_metal/third_party/taskflow
++  ${TTMETAL_SOURCE_DIR}/tt_stl
++  ${TTMETAL_SOURCE_DIR}/tt_stl/tt_stl
++  ${TTMETAL_SOURCE_DIR}/tt_eager
+   ${TTMETAL_BUILD_SYMLINK}/include
+   ${CPM_SOURCE_CACHE}/reflect/f93e77475670eaeacf332927dfe8b50e3f3812e0
+   ${CPM_SOURCE_CACHE}/nanomsg/28cc32d5bdb6a858fe53b3ccf7e923957e53eada/include
+@@ -100,35 +107,65 @@ else()
+ endif()
+ 
+ set(METAL_INSTALL_PREFIX "${TTMETAL_BUILD_DIR}")
+-ExternalProject_Add(
+-  tt-metal
+-  PREFIX ${TTMLIR_SOURCE_DIR}/third_party/tt-metal
+-  BINARY_DIR ${TTMETAL_BUILD_DIR}
+-  # This patch command creates the build dir that otherwise doesn't get created
+-  PATCH_COMMAND ${CMAKE_COMMAND} -E make_directory ${TTMETAL_BUILD_DIR}
+-  CMAKE_ARGS
+-    -DCMAKE_INSTALL_MESSAGE=NEVER
+-  CMAKE_GENERATOR Ninja
+-  CMAKE_ARGS
+-    -DCMAKE_BUILD_TYPE=${TTMETAL_BUILD_TYPE}
+-    -DCMAKE_INSTALL_PREFIX=${METAL_INSTALL_PREFIX}
+-    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+-    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+-    -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
+-    -DCMAKE_LINKER_TYPE=${CMAKE_LINKER_TYPE}
+-    -DCPM_SOURCE_CACHE=${CPM_SOURCE_CACHE}
+-    -DENABLE_CCACHE=${TTMETAL_ENABLE_CCACHE}
+-    -DWITH_PYTHON_BINDINGS=ON
+-    -DCMAKE_DISABLE_PRECOMPILE_HEADERS=${TTMETAL_DISABLE_PRECOMPILE_HEADERS}
+-    -DENABLE_TRACY=${TT_RUNTIME_ENABLE_PERF_TRACE}
+-    -DENABLE_LIBCXX=OFF
+-    -DENABLE_DISTRIBUTED=${ENABLE_DISTRIBUTED}
+-    -DTT_USE_SYSTEM_SFPI=${TT_USE_SYSTEM_SFPI}
+-  GIT_REPOSITORY https://github.com/tenstorrent/tt-metal.git
+-  GIT_TAG ${TT_METAL_VERSION}
+-  GIT_PROGRESS OFF
+-  BUILD_BYPRODUCTS ${TTNN_LIBRARY_PATH} ${TTNN_PY_LIBRARY_PATH} ${TTMETAL_LIBRARY_PATH} ${TRACY_LIBRARY_PATH} ${DEVICE_LIBRARY_PATH} ${TT_STL_LIBRARY_PATH}
+-)
++if (TTMETAL_USE_LOCAL_SOURCE)
++  ExternalProject_Add(
++    tt-metal
++    PREFIX ${TTMLIR_SOURCE_DIR}/third_party/tt-metal
++    SOURCE_DIR ${TTMETAL_SOURCE_DIR}
++    BINARY_DIR ${TTMETAL_BUILD_DIR}
++    DOWNLOAD_COMMAND ""
++    UPDATE_COMMAND ""
++    PATCH_COMMAND ${CMAKE_COMMAND} -E make_directory ${TTMETAL_BUILD_DIR}
++    CMAKE_GENERATOR Ninja
++    CMAKE_ARGS
++      -DCMAKE_INSTALL_MESSAGE=NEVER
++      -DCMAKE_BUILD_TYPE=${TTMETAL_BUILD_TYPE}
++      -DCMAKE_INSTALL_PREFIX=${METAL_INSTALL_PREFIX}
++      -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
++      -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
++      -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
++      -DCMAKE_LINKER_TYPE=${CMAKE_LINKER_TYPE}
++      -DCPM_SOURCE_CACHE=${CPM_SOURCE_CACHE}
++      -DENABLE_CCACHE=${TTMETAL_ENABLE_CCACHE}
++      -DWITH_PYTHON_BINDINGS=ON
++      -DCMAKE_DISABLE_PRECOMPILE_HEADERS=${TTMETAL_DISABLE_PRECOMPILE_HEADERS}
++      -DENABLE_TRACY=${TT_RUNTIME_ENABLE_PERF_TRACE}
++      -DENABLE_LIBCXX=OFF
++      -DENABLE_DISTRIBUTED=${ENABLE_DISTRIBUTED}
++      -DTT_USE_SYSTEM_SFPI=${TT_USE_SYSTEM_SFPI}
++    BUILD_BYPRODUCTS ${TTNN_LIBRARY_PATH} ${TTNN_PY_LIBRARY_PATH} ${TTMETAL_LIBRARY_PATH} ${TRACY_LIBRARY_PATH} ${DEVICE_LIBRARY_PATH} ${TT_STL_LIBRARY_PATH}
++  )
++else()
++  ExternalProject_Add(
++    tt-metal
++    PREFIX ${TTMLIR_SOURCE_DIR}/third_party/tt-metal
++    BINARY_DIR ${TTMETAL_BUILD_DIR}
++    # This patch command creates the build dir that otherwise doesn't get created
++    PATCH_COMMAND ${CMAKE_COMMAND} -E make_directory ${TTMETAL_BUILD_DIR}
++    CMAKE_ARGS
++      -DCMAKE_INSTALL_MESSAGE=NEVER
++    CMAKE_GENERATOR Ninja
++    CMAKE_ARGS
++      -DCMAKE_BUILD_TYPE=${TTMETAL_BUILD_TYPE}
++      -DCMAKE_INSTALL_PREFIX=${METAL_INSTALL_PREFIX}
++      -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
++      -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
++      -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
++      -DCMAKE_LINKER_TYPE=${CMAKE_LINKER_TYPE}
++      -DCPM_SOURCE_CACHE=${CPM_SOURCE_CACHE}
++      -DENABLE_CCACHE=${TTMETAL_ENABLE_CCACHE}
++      -DWITH_PYTHON_BINDINGS=ON
++      -DCMAKE_DISABLE_PRECOMPILE_HEADERS=${TTMETAL_DISABLE_PRECOMPILE_HEADERS}
++      -DENABLE_TRACY=${TT_RUNTIME_ENABLE_PERF_TRACE}
++      -DENABLE_LIBCXX=OFF
++      -DENABLE_DISTRIBUTED=${ENABLE_DISTRIBUTED}
++      -DTT_USE_SYSTEM_SFPI=${TT_USE_SYSTEM_SFPI}
++    GIT_REPOSITORY https://github.com/tenstorrent/tt-metal.git
++    GIT_TAG ${TT_METAL_VERSION}
++    GIT_PROGRESS OFF
++    BUILD_BYPRODUCTS ${TTNN_LIBRARY_PATH} ${TTNN_PY_LIBRARY_PATH} ${TTMETAL_LIBRARY_PATH} ${TRACY_LIBRARY_PATH} ${DEVICE_LIBRARY_PATH} ${TT_STL_LIBRARY_PATH}
++  )
++endif()
+ 
+ ExternalProject_Add_StepTargets(tt-metal download update configure)
+ 
+@@ -149,8 +186,8 @@ set_target_properties(tt-metal PROPERTIES EXCLUDE_FROM_ALL TRUE)
+ # EXCLUDE_FROM_ALL is used to avoid installing these files when installing the default component.
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/ttnn
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tools
++    ${TTMETAL_SOURCE_DIR}/ttnn
++    ${TTMETAL_SOURCE_DIR}/tools
+   DESTINATION ${CMAKE_INSTALL_PREFIX}/tt-metal
+   USE_SOURCE_PERMISSIONS
+   COMPONENT SharedLib
+@@ -159,7 +196,7 @@ install(
+ 
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/runtime
++    ${TTMETAL_SOURCE_DIR}/runtime
+   DESTINATION ${CMAKE_INSTALL_PREFIX}/tt-metal
+   USE_SOURCE_PERMISSIONS
+   COMPONENT SharedLib
+@@ -170,7 +207,7 @@ install(
+ # We only need `tt_llk" and `umd` files from `third_party` directory.
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal
++    ${TTMETAL_SOURCE_DIR}/tt_metal
+   DESTINATION ${CMAKE_INSTALL_PREFIX}/tt-metal
+   COMPONENT SharedLib
+   EXCLUDE_FROM_ALL
+@@ -180,7 +217,7 @@ install(
+ # NOTE: For some reason, CMake creates all directories even for non-matched files, but those will be empty.
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal
++    ${TTMETAL_SOURCE_DIR}/tt_metal
+   DESTINATION ${CMAKE_INSTALL_PREFIX}/tt-metal
+   COMPONENT SharedLib
+   EXCLUDE_FROM_ALL
+@@ -240,7 +277,7 @@ install(
+ # Copy third_party
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_metal/third_party
++    ${TTMETAL_SOURCE_DIR}/tt_metal/third_party
+   DESTINATION tt-metal/tt_metal
+   COMPONENT TTNNStandalone
+   EXCLUDE_FROM_ALL
+@@ -248,7 +285,7 @@ install(
+ # Copy tt_stl
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tt_stl
++    ${TTMETAL_SOURCE_DIR}/tt_stl
+   DESTINATION tt-metal
+   COMPONENT TTNNStandalone
+   EXCLUDE_FROM_ALL
+@@ -259,7 +296,7 @@ install(
+ 
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tests/tt_metal/distributed/config
++    ${TTMETAL_SOURCE_DIR}/tests/tt_metal/distributed/config
+   DESTINATION tt-metal/tests/tt_metal/distributed
+   COMPONENT DistributedRuntime
+   EXCLUDE_FROM_ALL
+@@ -267,7 +304,7 @@ install(
+ 
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tests/tt_metal/tt_fabric/custom_mesh_descriptors
++    ${TTMETAL_SOURCE_DIR}/tests/tt_metal/tt_fabric/custom_mesh_descriptors
+   DESTINATION tt-metal/tests/tt_metal/tt_fabric
+   COMPONENT DistributedRuntime
+   EXCLUDE_FROM_ALL
+@@ -275,7 +312,7 @@ install(
+ 
+ install(
+   DIRECTORY
+-    ${PROJECT_SOURCE_DIR}/third_party/tt-metal/src/tt-metal/tests/scale_out
++    ${TTMETAL_SOURCE_DIR}/tests/scale_out
+   DESTINATION tt-metal/tests/scale_out
+   COMPONENT DistributedRuntime
+   EXCLUDE_FROM_ALL

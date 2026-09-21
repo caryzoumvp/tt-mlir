@@ -82,19 +82,27 @@ elif [[ ! -f "$LLVM_INSTALL_DIR/lib/cmake/mlir/MLIRConfig.cmake" || \
   exit 1
 fi
 
-# Configure and build tt-mlir for x86-64-v2
-cmake -G Ninja -B "$TTMLIR_BUILD_DIR" \
-  -DCMAKE_BUILD_TYPE="${BUILD_TYPE:-Release}" \
-  -DCMAKE_C_COMPILER="$CC" \
-  -DCMAKE_CXX_COMPILER="$CXX" \
-  -DMLIR_DIR="$LLVM_INSTALL_DIR/lib/cmake/mlir" \
-  -DLLVM_DIR="$LLVM_INSTALL_DIR/lib/cmake/llvm" \
-  -DLLD_DIR="$LLVM_INSTALL_DIR/lib/cmake/lld" \
-  -DTTMLIR_TTMETAL_SOURCE_DIR="$TTMETAL_SOURCE_DIR" \
-  -DFLATBUFFERS_COMPILER="$TTMLIR_TOOLCHAIN_DIR/bin/flatc" \
-  -DTTMLIR_ENABLE_TESTS="${TTMLIR_ENABLE_TESTS:-OFF}" \
-  -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS_EXTRA:--march=x86-64-v2}" \
-  -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS_EXTRA:--march=x86-64-v2}"
+if [[ ! -f "$TTMLIR_BUILD_DIR/build.ninja" || "${RECONFIGURE:-OFF}" == "ON" ]]; then
+  # Configure tt-mlir for x86-64-v2. Reconfiguring resets the tt-metal
+  # ExternalProject, so preserve the existing Ninja tree for delta builds.
+  cmake -G Ninja -B "$TTMLIR_BUILD_DIR" \
+    -DCMAKE_BUILD_TYPE="${BUILD_TYPE:-Release}" \
+    -DCMAKE_C_COMPILER="$CC" \
+    -DCMAKE_CXX_COMPILER="$CXX" \
+    -DMLIR_DIR="$LLVM_INSTALL_DIR/lib/cmake/mlir" \
+    -DLLVM_DIR="$LLVM_INSTALL_DIR/lib/cmake/llvm" \
+    -DLLD_DIR="$LLVM_INSTALL_DIR/lib/cmake/lld" \
+    -DTTMLIR_TTMETAL_SOURCE_DIR="$TTMETAL_SOURCE_DIR" \
+    -DFLATBUFFERS_COMPILER="$TTMLIR_TOOLCHAIN_DIR/bin/flatc" \
+    -DTTMLIR_ENABLE_RUNTIME="${TTMLIR_ENABLE_RUNTIME:-ON}" \
+    -DTTMLIR_ENABLE_STABLEHLO="${TTMLIR_ENABLE_STABLEHLO:-ON}" \
+    -DTT_RUNTIME_ENABLE_TTNN="${TT_RUNTIME_ENABLE_TTNN:-ON}" \
+    -DTT_RUNTIME_ENABLE_TTMETAL="${TT_RUNTIME_ENABLE_TTMETAL:-ON}" \
+    -DTT_RUNTIME_ENABLE_DISTRIBUTED="${TT_RUNTIME_ENABLE_DISTRIBUTED:-ON}" \
+    -DTTMLIR_ENABLE_TESTS="${TTMLIR_ENABLE_TESTS:-OFF}" \
+    -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS_EXTRA:--march=x86-64-v2}" \
+    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS_EXTRA:--march=x86-64-v2}"
+fi
 
 cmake --build "$TTMLIR_BUILD_DIR" -j "${JOBS:-$(nproc)}"
 if [[ ! -f "$TTMLIR_BUILD_DIR/build.ninja" ]]; then
